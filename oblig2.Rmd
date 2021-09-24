@@ -1,0 +1,477 @@
+---
+title: "oblig2"
+author: "anettfre"
+date: "Autumn 2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem 1
+### 1
+
+
+```{r}
+names = c("TPSA", "SAacc", "H050", "MLOGP", "RDCHI", "GATS1p", "nN", "c040", "LC50")
+data = read.csv('qsar_aquatic_toxicity.csv', sep=";", col.names=names)
+set.seed(1111)
+smp_size = floor(0.67 * nrow(data))
+train_ind = sample(seq_len(nrow(data)), replace = FALSE, size = smp_size)
+train = data[train_ind, ]
+test = data[-train_ind, ]
+summary(data)
+```
+I think to model the count vaariables with a linear effect would give the best result. 
+Looking at the count variables H050, nN and C040: In nN and C040 most samples have 0 number of atoms sincew the median is 0, in nN the median is 1 so there are some more samples with nitogen atoms than with carbon and hydrogen. 
+
+
+```{r}
+mod_linear_effect <- lm(LC50 ~ ., data = train)
+summary(mod_linear_effect)
+train_dict = train
+train_dict$H050 = ifelse(train_dict$H050==0,0,1)
+train_dict$nN = ifelse(train_dict$nN==0,0,1)
+train_dict$c040 = ifelse(train_dict$c040==0,0,1)
+test_dict = test
+test_dict$H050 = ifelse(test_dict$H050==0,0,1)
+test_dict$nN = ifelse(test_dict$nN==0,0,1)
+test_dict$c040 = ifelse(test_dict$c040==0,0,1)
+
+mod_dichotomize <- lm(LC50 ~ ., data = train_dict)
+summary(mod_dichotomize)
+
+error = NULL
+error$train_lin <- mean((train$LC50 - predict(mod_linear_effect, newdata = train))^2)
+error$test_lin <- mean((test$LC50 - predict(mod_linear_effect, newdata = test))^2)
+error$train_dict <- mean((train_dict$LC50 - predict(mod_dichotomize, newdata = train_dict))^2)
+error$test_dict <- mean((test_dict$LC50 - predict(mod_dichotomize, newdata = test_dict))^2)
+cbind(error)
+```
+
+We can se from the test error that the methods here produce almost equal results. The metod with dicthomized variables have a little more test error but varies with each run, while the regular linear effect have the smalles train error. 
+
+Significance of the regression coefficients for the regular linear effect there is evidence that multiple variables have a correlation to LC50/ Aquatic toxicity. With TPSA, MLOGP and RDCHI having a possivtive correlation, with RDCHI having a higher P-value and therfore less evidence of correlation for RDCHI. 
+SAacc, GATS1p and nN have a negative correlation with Aquatic toxicity. 
+
+Significance of the regression coefficients for the dichtomize linear effect there is variables that have a strong correlation to LC50/ Aquatic toxicity than the regual model. With TPSA, MLOGP and RDCHI having a possivtive correlation. RDCHI have a higher P-value and therfore less evidence of correlation for RDCHI.
+SAacc and GATS1p have a negative correlation with Aquatic toxicity. 
+
+Differences in p-vaiues between models:
+The variable nN have a low value in the linear model but not in the dichtomized model. In the dichtomized model nN have a high p-value. P-value for TPSA is lower in the linear model but still low in the dichtomized model. The p-value for H050 is higher in the linear model. 
+
+### 2
+
+The sample does a random train test split each time. To be sure of different splits i set a new seed for each iteration.  
+
+```{r}
+error_train_lin = 0
+error_test_lin = 0
+error_train_dict = 0
+error_test_dict = 0
+
+for (i in 1:200){
+  set.seed((i))
+  train_ind_new = sample(seq_len(nrow(data)), replace = FALSE, size = smp_size)
+  train_new = data[train_ind_new, ]
+  test_new = data[-train_ind_new, ]
+  mod_linear_effect_new <- lm(LC50 ~ ., data = train_new)
+  train_dict_loop = train_new
+  train_dict_loop$H050 = ifelse(train_dict$H050==0,0,1)
+  train_dict_loop$nN = ifelse(train_dict$nN==0,0,1)
+  train_dict_loop$c040 = ifelse(train_dict$c040==0,0,1)
+  test_dict_loop = test_new
+  test_dict_loop$H050 = ifelse(test_dict$H050==0,0,1)
+  test_dict_loop$nN = ifelse(test_dict$nN==0,0,1)
+  test_dict_loop$c040 = ifelse(test_dict$c040==0,0,1)
+
+  mod_dichotomize_new = lm(LC50 ~ ., data = train_dict)
+  error_train_lin = error_train_lin + mean((train_new$LC50 - predict(mod_linear_effect_new, newdata = train_new))^2)
+  error_test_lin = error_test_lin + mean((test_new$LC50 - predict(mod_linear_effect_new, newdata = test_new))^2)
+  error_train_dict = error_train_dict + mean((train_dict_loop$LC50 - predict(mod_dichotomize_new, newdata = train_dict_loop))^2)
+  error_test_dict = error_test_dict + mean((test_dict_loop$LC50 - predict(mod_dichotomize_new, newdata = test_dict_loop))^2)
+}
+
+c((error_train_lin/200), (error_test_lin/200), (error_train_dict/200), (error_test_dict/200))
+  
+```
+
+The training and test error for the regual model is almost the same, they are slightly lower. The train error and test error for the dichotomized model have both increased, so there is now a grater difference between the two models. The test error is on some runs lower than the train error for the dichotomized model. Since the result of test and train error varies for both models it might sugest that 200 runs is not enough for a stable result. 
+
+When we dichotomize variables we loose information and therefore we loose some of the relation to a variable and the response variable. In our case an increase in number of atoms might have a great effect on the Aquatic toxicity, this might explane why example the variable nN, when dichotomized, lost correlation significance. Since the difference between having 1 atom in nN and 11 (that is the max value) might have a lot of inpact on Aquatic toxicity.
+
+
+### 3
+
+Using the step function for finding BIC, eventhough labelled AIC in the result of the model the result should be using BIC criterion. Because k is changed from its default value in the step function to log(n). 
+
+
+```{r}
+library(MASS)
+full.model = lm(LC50 ~ ., data = as.data.frame(train))
+null.model = lm(LC50 ~ 1, data = as.data.frame(train))
+
+model.backward.aic = stepAIC(object = full.model, scope = null.model, direction = "backward")
+summary(model.backward.aic)
+model.forward.aic = stepAIC(object = null.model, scope=list(lower=null.model, upper=full.model), direction = "forward")
+summary(model.forward.aic)
+mean(model.backward.aic$residuals^2)
+mean(model.forward.aic$residuals^2)
+
+#step function with k = log(n)
+model.backward.bic = step(object = full.model, scope = null.model, direction="backward", k=log(nrow(train)))
+model.forward.bic = step(object = null.model, scope=list(lower=null.model, upper=full.model), direction="forward", k=log(nrow(train)))
+
+summary(model.backward.aic)
+summary(model.forward.aic)
+summary(model.backward.bic)
+summary(model.forward.bic)
+```
+
+
+For backward elimination with AIC criterion I get the model lm(LC50 ~ TPSA + SAacc + MLOGP + RDCHI + GATS1p + nN).
+For forward elimination with AIC criterion I get the model lm(LC50 ~ MLOGP + TPSA + SAacc + nN + GATS1p + RDCHI). 
+For backward elimination with BIC criterion I get the model lm(LC50 ~ TPSA + SAacc + MLOGP + RDCHI + GATS1p + nN). This is the same as with backward elimination with AIC criterion. 
+For forward elimination with BIC criterion I get the model lm(LC50 ~ MLOGP + TPSA + SAacc + nN + GATS1p + RDCHI). This is the same as with forward elimination with AIC criterion. 
+These models are not the same when using forward and backward elimination. 
+This happens here because when we are using different methods for finding the models with forward and backward elimination. In forward elimination we are adding one by one variable that reduces the residual sum of squares until we have reached the stopping criterion. In backward elimination we are removing the variable with the highest p-value, so the variable that have least correlation with the Aquatic toxicity, then using the new model finding the next variable to drop (that now has the highest p-value), until we reach the stopping criterion. 
+
+### 4
+ 
+Using 10-fold cross-validation.
+Using MSE as a measure to find the best complexity parameter.
+
+```{r}
+library(glmnet)
+library(leaps)
+
+B = 20
+l_grid = 10**seq(-5, -1, length=20)
+X = scale(as.matrix(train[, -9]))
+y =  scale(as.matrix(train[, 9]))
+n = nrow(X)
+bootstrap.mse = matrix(NA, nrow = 20, ncol = 1)
+
+for (b in 1:B) {
+  mse = 0
+  for (j in 1:100) {
+    index = sample(1:n, size=n, replace=TRUE)
+    mod.ridge = glmnet(X[index, ],y[index,], lambda = l_grid[b], alpha = 0)
+    pred = predict(mod.ridge, newx = X[-index,-9])
+    mse = mse + mean((pred - y[-index,])^2)
+  }
+  bootstrap.mse[b] = mse/100
+}
+#number 17 is lowest
+show(l_grid[13])
+#10 fold cross validation
+cv.ridge = cv.glmnet(X, y, lambda = l_grid, alpha=0, type.measure="mse")
+
+show(cv.ridge$lambda.min)
+
+plot(c(0,0.12),c(0.4,0.8), xlab="lambda values", ylab="MSE")
+points(l_grid, bootstrap.mse, col="red")
+points(l_grid, cv.ridge$cvm, col="green")
+legend("topleft",c("Bootstrap error - red", "CV error - green"), col=c("red","green"))
+
+
+```
+ 
+The best lambda from bootstrapping is 0.0034 and from cross-validation 0.0144, this varies some for different runs. We can see from the plot that bootstrap gives a higher MSE some values of lambda. We also see that CV generaly have less variation for different lambdas than bootstrap.  
+ 
+ 
+### 5
+
+First I am smootging TPSA, MLOGP, RDCHI, SAacc and GATS1p since these are the values from the earlier task with highest correlation. 
+They I am smoothing the other values, H050, nN and c040 and adding 6 degrees of freedom for a more complex model. 
+
+```{r}
+# gam spline
+library(gam)
+mod_gam1 = gam(LC50 ~ s(TPSA) + s(SAacc) + H050 + s(MLOGP) + s(RDCHI) + s(GATS1p) + nN + c040, data = train)
+summary(mod_gam1)
+mod_gam2 = gam(LC50 ~ TPSA + SAacc + s(H050, df=6) + MLOGP + RDCHI + GATS1p + s(nN, df=6) + s(c040, df=6), data = train)
+summary(mod_gam2)
+```
+
+My first smoothing model have a median residuals of -0.1132. It has much less significant values for nonparametric effects with s(SAacc) as the most influencal one. 
+
+My second smoothing model have a median residuals of -0.1108, this is less than model 1. This model have more significant nonparametric effects than the first, but only the variables with a higher degree of freedom. For the parametric effect the models have more similar p-values. 
+
+### 6
+
+I use library tree for creating the tree and cv.tree to select the best number of nodes on the tree. I then use prune.tree for pruning. 
+
+```{r}
+library(tree)
+tree_1 = tree(LC50~., train)
+summary(tree_1)
+#plot(tree_1)
+#text(tree_1, pretty = 0)
+
+cv_tree_1 = cv.tree(tree_1)
+plot(cv_tree_1$size, cv_tree_1$dev, type = 'b')
+summary(cv_tree_1)
+prune_tree_1 = prune.tree(tree_1, best = 13)
+plot(prune_tree_1)
+text(prune_tree_1, pretty = 0)
+mean((train$LC50 - predict(prune_tree_1, newdata = train))^2)
+```
+The cost-complexity pruning led to the selected tree size of 13, using the function cv.tree that uses cross-validation to find the deviance. I can also see on the plot that a tree with size 13 have a low deviance.  
+Se that a 13 node tree is the best from cv.tree, using plot I visualize the results. Using pruning i get a train mse of 1.24. 
+
+### 7 
+
+```{r}
+train_error = NULL
+test_error = NULL
+
+test_error$lin = error_test_lin/200
+test_error$dict = error_test_dict/200
+test_error$gam1 = mean((test$LC50 - predict(mod_gam1, newdata = test[, -9]))^2)
+test_error$gam2 = mean((test$LC50 - predict(mod_gam2, newdata = test[, -9]))^2)
+test_error$tree = mean((test$LC50 - predict(prune_tree_1, newdata = test))^2)
+
+
+train_error$lin = error_train_lin/200
+train_error$dict = error_train_dict/200
+train_error$gam1 = mean((train$LC50 - predict(mod_gam1, newdata = train[, -9]))^2)
+train_error$gam2 = mean((train$LC50 - predict(mod_gam2, newdata = train[, -9]))^2)
+train_error$tree = mean((train$LC50 - predict(prune_tree_1, newdata = train))^2)
+
+cbind(error)
+cbind(train_error, test_error)
+```
+
+The lowest test error is when using the first gam model. The best train error is also from that model. The linear effect test error is slightlty higher than the gam model. 
+
+
+## Problem 2
+
+### 1
+
+Using sample.split to ensure about equal amount of women with diabeties.
+```{r}
+library(mlbench)
+library(caTools)
+library(class)
+library(caret)
+
+data(PimaIndiansDiabetes)
+train_ind_dia = sample.split(PimaIndiansDiabetes$diabetes, SplitRatio = 0.67)
+test_ind_dia = !train_ind_dia
+print(dim(PimaIndiansDiabetes[train_ind_dia,-9]))
+
+trControl_5 = trainControl(method  = "cv",  number  = 5)
+trControl_loo = trainControl(method  = "cv",  number  = nrow(PimaIndiansDiabetes[train_ind_dia,]))
+fit_5 = train(x = PimaIndiansDiabetes[train_ind_dia,-9], 
+              y = PimaIndiansDiabetes[train_ind_dia,9], 
+              method     = "knn",
+              tuneGrid   = expand.grid(k = 1:10),
+              trControl  = trControl_5,
+              metric     = "Accuracy")
+fit_loo = train(x = PimaIndiansDiabetes[train_ind_dia,-9], 
+                y = PimaIndiansDiabetes[train_ind_dia,9],
+                method     = "knn",
+                tuneGrid   = expand.grid(k = 1:10),
+                trControl  = trControl_loo,
+                metric     = "Accuracy")
+summary(fit_5)
+summary(fit_loo)
+test_y = ifelse(PimaIndiansDiabetes[test_ind_dia,9] =="neg",0,1)
+pred_5 = predict(fit_5, newdata=PimaIndiansDiabetes[test_ind_dia,-9])
+pred_5 = ifelse(pred_5 =="neg",0,1)
+test_error_5 = mean((test_y - pred_5)^2)
+
+pred_loo = predict(fit_loo, newdata=PimaIndiansDiabetes[test_ind_dia,-9])
+pred_loo = ifelse(pred_loo =="neg",0,1)
+test_error_loo = mean((test_y - pred_loo)^2)
+cbind(test_error_5, test_error_loo)
+
+plot(fit_5)
+plot(fit_loo)
+
+```
+Loo cross-validation gives a lower test error.
+
+### 2
+
+Using gam function with select = TRUE for model selectin. 
+
+https://www.rdocumentation.org/packages/mgcv/versions/1.8-33/topics/gam.selection : 
+
+"The second approach leaves the original smoothing penalty unchanged, but constructs an additional penalty for each smooth, which penalizes only functions in the null space of the original penalty (the `completely smooth' functions). Hence, if all the smoothing parameters for a term tend to infinity, the term will be selected out of the model. This latter approach is more expensive computationally, but has the advantage that it can be applied automatically to any smooth term. The select argument to gam turns on this method."
+
+```{r}
+library(mgcv)
+train_2 = PimaIndiansDiabetes[train_ind_dia,]
+test_2 = PimaIndiansDiabetes[-train_ind_dia,]
+train_2_a = train_2
+test_2_a = test_2
+train_2[,9] = ifelse(PimaIndiansDiabetes[train_ind_dia,9] =="neg",0,1)
+test_2[,9] = ifelse(PimaIndiansDiabetes[-train_ind_dia,9] =="neg",0,1)
+gam_model = gam(diabetes ~ s(pregnant) + s(glucose) + s(pressure) + s(triceps) + s(insulin)
+                + s(mass) + s(pedigree) + s(age), data = train_2, select = TRUE)
+summary(gam_model)
+mean((train_2[,9] - predict(gam_model, newdata = train_2[, -9]))^2)
+mean((test_2[,9] - predict(gam_model, newdata = test_2[, -9]))^2)
+```
+From my result it seems all variables is in the best model have all variables exept triceps. The R-squared is not that high, so this method might not be the best for creating a model for this data. The test and train error is lower here than when using knn.  Here the test error is slightly lower than train error. Where train error is 0.2251 and test error 0.2246.
+
+### 3
+
+```{r}
+errors2 = NULL
+#classification tree
+library(rpart)
+#grow tree
+tree = rpart(diabetes ~., data=train_2, method="class")
+printcp(tree)
+#choose the complexity parameter with smallest cv-error and prune
+prune_tree = prune(tree, cp= tree$cptable[which.min(tree$cptable[,"xerror"]),"CP"])
+summary(prune_tree)
+errors2$train_tree = mean((train_2[,9] - predict(prune_tree, newdata = train_2[, -9]))^2)
+errors2$test_tree = mean((test_2[,9] - predict(prune_tree, newdata = test_2[, -9]))^2)
+
+#bagging
+library(ipred)
+library(adabag)
+bag = bagging(diabetes ~., data=train_2_a)
+#Using the pruning option
+bagging.pred = predict.bagging(bag, newdata=test_2_a[, -9], newmfinal=3)
+errors2$train_bag = mean(bag$class != train_2_a[,9])
+errors2$test_bag = mean(bagging.pred$class != test_2_a[,9])
+
+#random forrest
+library(randomForest)
+rf = randomForest(x = train_2[,-9], y = train_2[,9], 
+                  xtest = test_2[,-9], ytest = test_2[,9], mtry = sqrt(ncol(train_2)))
+rf
+errors2$test_rf = mean(rf$mse)
+#Adaboost
+library(mboost)
+AdaBoost = mboost(as.factor(diabetes)~., data = as.data.frame(train_2),
+                   family = AdaExp(), baselearner = 'btree',
+                   boost_control(mstop = 400))
+summary(AdaBoost)
+error_adaBoost = NULL
+for (i in 1:400) {
+  pred_ada = as.factor(predict(AdaBoost[i], newdata = as.data.frame(test_2[,-9]), type = 'class'))
+  error_adaBoost[i] = mean(test_2[,9] != pred_ada)
+}
+errors2$test_ada = mean(error_adaBoost)
+errors2
+```
+
+The classification tree gives the highest test error. The random forrest gives the lowest test error. 
+Bagging gives a lower test and train error than classification tree. AdaBoost have a slightly higher test error than bagging.  
+
+### 4
+
+I would use the method of random forrest beacuse it is easy to implement and gives a low test error. Random forrest can also handle binary, categorical and numerical features and the data do not need to be preprossed a lot like other method. The data don't need to be scaled. The method is also fast. Random forrest gives low bias and some higher variance.   
+
+### 5
+```{r}
+error_5 = NULL
+
+data(PimaIndiansDiabetes2)
+data_3 = na.omit(PimaIndiansDiabetes2)
+train_ind_dia_3 = sample.split(data_3$diabetes, SplitRatio = 0.67)
+train_3 = data_3[train_ind_dia_3, ]
+test_3 = data_3[-train_ind_dia_3, ]
+
+#knn from 2.1
+#choosing k = 5 in knn
+trControl_5 = trainControl(method  = "cv",  number  = 5)
+trControl_loo = trainControl(method  = "cv",  number  = nrow(train_3))
+fit_5 = train(x = train_3[,-9], 
+              y = train_3[,9], 
+              method     = "knn",
+              tuneGrid   = expand.grid(k = 5),
+              trControl  = trControl_5,
+              metric     = "Accuracy")
+fit_loo = train(x = train_3[,-9], 
+                y = train_3[,9],
+                method     = "knn",
+                tuneGrid   = expand.grid(k = 5),
+                trControl  = trControl_loo,
+                metric     = "Accuracy")
+summary(fit_5)
+summary(fit_loo)
+test_y = ifelse(test_3[,9] =="neg",0,1)
+pred_5 = predict(fit_5, newdata=test_3[,-9])
+pred_5 = ifelse(pred_5 =="neg",0,1)
+error_5$knn5 = mean((test_y - pred_5)^2)
+
+pred_loo = predict(fit_loo, newdata=test_3[,-9])
+pred_loo = ifelse(pred_loo =="neg",0,1)
+error_5$knnloo = mean((test_y - pred_loo)^2)
+
+#gam from 2.2
+train_3_a = train_3
+test_3_a = test_3
+train_3[,9] = ifelse(train_3[,9] =="neg",0,1)
+test_3[,9] = ifelse(test_3[,9] =="neg",0,1)
+gam_model_2 = gam(diabetes ~ s(pregnant) + s(glucose) + s(pressure) + s(triceps) + s(insulin)
+                + s(mass) + s(pedigree) + s(age), data = train_3, select = TRUE)
+summary(gam_model)
+error_5$train_gam = mean((train_3[,9] - predict(gam_model_2, newdata = train_3[, -9]))^2)
+error_5$test_gam = mean((test_3[,9] - predict(gam_model_2, newdata = test_3[, -9]))^2)
+
+
+#classification tree
+#grow tree
+tree = rpart(diabetes ~., data=train_3, method="class")
+printcp(tree)
+#choose the complexity parameter with smallest cv-error and prune
+prune_tree = prune(tree, cp= tree$cptable[which.min(tree$cptable[,"xerror"]),"CP"])
+summary(prune_tree)
+error_5$train_tree = mean((train_3[,9] - predict(prune_tree, newdata = train_3[, -9]))^2)
+error_5$test_tree = mean((test_3[,9] - predict(prune_tree, newdata = test_3[, -9]))^2)
+
+#bagging
+
+bag = bagging(diabetes ~., data=train_3_a)
+#Using the pruning option
+bagging.pred = predict.bagging(bag, newdata=test_3_a[, -9], newmfinal=3)
+error_5$train_bag = mean(bag$class != train_3_a[,9])
+error_5$train_bag = mean(bagging.pred$class != test_3_a[,9])
+
+#random forrest
+library(randomForest)
+rf = randomForest(x = train_3[,-9], y = train_3[,9], 
+                  xtest = test_3[,-9], ytest = test_3[,9], mtry = sqrt(ncol(train_3)))
+error_5$test_rf = mean(rf$mse)
+
+#Adaboost
+library(mboost)
+AdaBoost = mboost(as.factor(diabetes)~., data = as.data.frame(train_3),
+                   family = AdaExp(), baselearner = 'btree',
+                   boost_control(mstop = 400))
+summary(AdaBoost)
+error_adaBoost = NULL
+for (i in 1:400) {
+  pred_ada = as.factor(predict(AdaBoost[i], newdata = as.data.frame(test_3[,-9]), type = 'class'))
+  error_adaBoost[i] = mean(test_3[,9] != pred_ada)
+}
+error_5$adaboost = mean(error_adaBoost)
+error_5
+```
+
+
+When removinge false values in the data (such as the bmi of 0) it is reasonable that I get a lower error. 
+
+For knn I get a little lower test error loo cv, with this data the test error is about the same for 5 cv as the previous dataset.
+
+For gam the train error is slightly lower here then with the first data. For the test error with gam comared to the previous data it is also lower. 
+
+For classification tree the test error and train error is also lower than with the other dataset. 
+
+For bagging the error is also lower. 
+
+For random forrest the residuals is lower and the test set MSE is much lower. 
+
+For AdaBoost the average test error is now 0.186, this is lower than in task 2.3.
+
+The result is not surprisingly better for all the methods when removing missing values instead of setting them to 0. 
