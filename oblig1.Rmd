@@ -1,0 +1,170 @@
+---
+title: "STK-IN4300 oblig 1"
+author: "anettfre"
+date: "Autumn 2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,fig.width=12, fig.height=6)
+```
+
+# Problem 1. Reporting
+
+## Regression analysis
+
+### Introduction 
+
+In this report I am going to analyse a dataset of white wine quality from UCI Machine Learning Repository. The wines in the dataset is from north in Portugal. 
+The purpose of this analysis is to se if I can predict the quality of a white wine given these variable inputs. This can be used to know if a wine is of good quality whitout tasing it and also help to choose a good wine for non-wineexperts. 
+
+I will use backward elimination with Akaike information criterion, and also use lasso regression to se if I can predict the quality of a white wine. 
+
+The output variable in the dataset is quality, it is in a range from 0 to 10, where 10 is the best quality. In the dataset it is a lot of wines with quality 5 or 6, i.e normal wines and not many excellent or poor wines. This will probably make it hard to separate the good and bad quality wine. The quality from each wine in the dataset is found by sensory data. Since the quality is determined from sensory data I assume that multiple people (wine experts) have tasted the different wines and graded the quality. This might have made the dataset more unrelaiable given that different people might have (minor) different opinion of the quality of a wine and this makes it more difficult for the model to predict the right quality. 
+
+The covatiates in the dataset is based on physicochemical tests. These are the different vaiables:
+
+1 - fixed acidity, 
+2 - volatile acidity, 
+3 - citric acid, 
+4 - residual sugar, 
+5 - chlorides, 
+6 - free sulfur dioxide, 
+7 - total sulfur dioxide, 
+8 - density, 
+9 - pH, 
+10 - sulphates, 
+11 - alcohol,
+
+
+First we set a seed to make results reproducible. We will also look at the different covariates.
+
+```{r}
+library(ggplot2)
+set.seed(1111)
+white_wine = read.csv("winequality-white.csv", sep=";", header=TRUE)
+head(white_wine)
+summary(white_wine)
+dim(white_wine)
+which(is.na(white_wine))
+#the response variable
+y <- white_wine[, 12]
+#the explanatory variables
+X <- white_wine[, 1:11]
+boxplot(scale(X),las = 2, col=rainbow(length(unique(X))), main="Boxplot of standardized values of variables")
+mtext("Standardized values", side = 2, line = 2)
+#mtext("Variables", side = 1, line = 7) 
+```
+
+### Information about the dataset
+
+The dimension of the dataset is 4898 x 12, that means that the dataset has 4898 samples, 11 explanatory vaiables and a response vaiable, y, that is the quality of the wine. From the boxplot I see som points that is far from the average, these might be outliers, for this analysis I don't do something with them. I looked for missing values with is.na, there is not any missing values. 
+
+To look further on the covariates I plot a histogram of each of them and calculate the average I also do it for the quality. This gives a good visual presentation of the distribution of the covariates. 
+
+```{r}
+for (i in 1:12) {
+  hist(white_wine[[i]], xlab = names(white_wine)[i],  col = "blue", main = paste("Average =",  mean(white_wine[[i]],4)))
+}
+```
+
+We can se from the histogram plots and the summary of the varables that:
+Fixed acidity has a average of 6.8 and there is almost a normal disribution of values.
+Volatile acidity has a average of 0.26 and is right-skewed.
+Citric acid has a average of 0.32 and is also right-skewed. Residual sugar has a average of 5.2 and we can se that most of the values is close to 0 and very few is over 20. Chlorides has a average of 0.043, most of the wines is between 0.00 and 0.10 but a few har chlorides from 0.10 to 0.20. Free sulfur dioxide has a average of 34. Total sulfur dioxide has a average of 134. Density has a average of 0.99, the wines values is distributed over a small range. PH has a average of 3.18. Sulphates has a average of 0.47. Alcohol has a average of 10.4, it is distributed over a longer intervall than the other variables. Quality has a average of 6 and in contrast to the explanatory variables this is not right-skewed, it is no values over 9 and under 3.
+
+
+To compare the vaiables we scale the data. 
+```{r}
+library(ggcorrplot)
+ggcorrplot(cor(scale(X)), lab = TRUE, type = "lower", title="Correlationplot")
+```
+
+Using ggcorrplot to visualise the correlation beween the explanitory vaiables. We can se that residual sugar and density, and also between density and alcohol have strong correlation. PH and total sulfur dioxide, pH and free sulfur dioxide has 0 correlation. Stronger correlation in the plot is shown with a darker color, red or blue. 
+
+
+```{r}
+sample <- sample.int(n = nrow(X), size = floor(.75*nrow(X)), replace = F)
+train_data = X[sample, ]
+train_y = y[sample]
+scale_train = scale(train_data)
+
+X.mean = apply(train_data, 2, mean)
+X.sd = apply(train_data, 2, sd)
+
+test_data = X[-sample, ] 
+test_y = y[-sample]
+scale_test = sapply(1:ncol(test_data),
+                  function(i, X.test, X.mean, X.sd) (X.test[, i] - X.mean[i])/X.sd[i],
+                  X.test = test_data, X.mean = X.mean, X.sd = X.sd)
+colnames(scale_test) = colnames(train_data)
+
+```
+
+It is important to scale the data after we divide in test and train data such that train data don't have information on test data to train on. So I have divided the dataset into test and train, and then scaled the explanatory vaiables. I scale the test data with the mean and standard deviation of the trainig set, such that if the test set consist of one variable the test (set) still get scaled. 
+
+### Model selection
+
+Using backward elemination we can find how many vaiables is best for the model, goind from a full model with all 11 vaiables to a null model with 0 vaiables. I use Akaike information criterion to find the best model. 
+
+```{r}
+library(MASS)
+full.model = lm(train_y ~ ., data = as.data.frame(scale_train))
+null.model = lm(train_y ~ 1, data = as.data.frame(scale_train))
+
+model.backward.aic = stepAIC(object = full.model, scope = null.model, direction = 'backward')
+summary(model.backward.aic)
+mean(model.backward.aic$residuals^2)
+plot(model.backward.aic)
+```
+Using backward elimination we get the best model with 8 features, that are: fixed acidity, volatile avidity, residual sugar, free sulfur dioxide, density, pH, sulphates and alcohol. Then  the adjusted R-squared is 0.29 and a mean squared error of 0.55. 
+
+The pattern in the Residuals vs fitted does not look random, this might sugest that a non-linear model will expalin the data better, the points is distributed around the 0 line which is good. 
+From the normal Q-Q plot we can se that it might be a better model to explain our data since it is a couple of points in both ends who are far from the line. 
+We can se from the Scale-Location plot that our residuals is not homoscedastic, since the points is not spread equally along the predictor range. 
+From the Residuals vs Leverage it looks like sample 2782 is an outlier. Removing this might have given a better result. 
+
+#### Lasso regression
+
+```{r}
+library(glmnet)
+cv_lasso = cv.glmnet(x = scale_train, y = train_y, alpha = 1)
+lambda_cv = cv_lasso$lambda.min
+cbind(cv_lasso$lambda.min, cv_lasso$lambda.1se)
+mod_lasso = glmnet(x = scale_train, y = train_y, lambda = lambda_cv, alpha = 1)
+mod_lasso$beta
+
+
+lasso.train.error = mean((train_y - cbind(1, scale_train) %*% c(mean(train_y),as.vector(mod_lasso$beta)))^2)
+lasso.test.error = mean((test_y - cbind(1, scale_test) %*% c(mean(train_y), as.vector(mod_lasso$beta)))^2)
+best.model.error.train = mean((predict(model.backward.aic, as.data.frame(scale_train)) - train_y)^2)
+best.mode.error.test = mean((predict(model.backward.aic, as.data.frame(scale_test)) - test_y)^2)
+cbind(lasso.train.error, lasso.test.error, best.model.error.train, best.mode.error.test)
+```
+
+The error for lasso on training is 0.555 and test 0.599, and for the linear model with 8 vaiables a train error of 0.553 and test error of 0.595, this is a high error. We don't know if when the model predict wrong it is way off or only by 1. It is worse if it predict a wine is a 10 when it is a 1, than predictin it is 5 when it is 6. This can be analysed further. 
+
+### Conclution
+
+The MSE for lasso and for the best linear model found using AIC is not that good, so linear model and lasso regression is not great to predict if a wine is of good quality given these explanatory vaiables using the methods in this report. 
+
+
+### Librarys used
+
+ggplot2: for boxplot
+
+ggcorrplot: for correlationpolt
+
+MASS: for AIC
+
+glmnet: for lasso regression
+
+### References:
+
+http://archive.ics.uci.edu/ml/datasets/Wine+Quality
+
+https://medium.com/data-distilled/residual-plots-part-3-scale-location-plot-113e469b99c
+
+https://www.r-bloggers.com/2013/06/box-plot-with-r-tutorial/
+
+Lecture notes
